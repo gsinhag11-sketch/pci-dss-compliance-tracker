@@ -13,6 +13,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
 
 # Register all blueprints
@@ -35,6 +37,15 @@ def health():
         "version": "1.0.0"
     }
 
+# Load ChromaDB documents on startup
+with app.app_context():
+    try:
+        from services.chroma_client import ChromaClient
+        chroma = ChromaClient()
+        count = chroma.load_documents("./docs")
+        logger.info(f"RAG pipeline ready — {chroma.get_doc_count()} chunks in ChromaDB")
+    except Exception as e:
+        logger.error(f"ChromaDB startup error: {str(e)}")
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-    
