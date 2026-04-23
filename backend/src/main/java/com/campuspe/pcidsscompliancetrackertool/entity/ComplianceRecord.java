@@ -1,4 +1,4 @@
-package com.internship.tool.entity;
+package com.campuspe.pcidsscompliancetrackertool.entity;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;

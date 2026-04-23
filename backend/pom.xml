@@ -12,8 +12,8 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.internship</groupId>
-    <artifactId>pci-dss-compliance-tracker</artifactId>
+    <groupId>com.campuspe</groupId>
+    <artifactId>pci-dss-compliance-tracker-tool</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>PCI-DSS Compliance Tracker</name>
     <description>PCI-DSS Compliance Tracker - Spring Boot Backend</description>
