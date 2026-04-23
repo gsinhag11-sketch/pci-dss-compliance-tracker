@@ -1,10 +1,12 @@
 import json
+import logging
 from flask import Blueprint, request, jsonify
 from services.groq_client import GroqClient
 from datetime import datetime, timezone
 
 describe_bp = Blueprint("describe", __name__)
 groq_client = GroqClient()
+logger = logging.getLogger(__name__)
 
 def load_prompt(template_path: str, input_text: str) -> str:
     with open(template_path, "r") as f:
@@ -14,9 +16,7 @@ def load_prompt(template_path: str, input_text: str) -> str:
     )
 
 def clean_and_parse(result: str):
-    # Fix double curly braces returned by Groq
     result = result.replace("{{", "{").replace("}}", "}")
-    # Remove markdown code fences if present
     result = result.strip()
     if result.startswith("```json"):
         result = result[7:]
@@ -26,33 +26,74 @@ def clean_and_parse(result: str):
         result = result[:-3]
     return result.strip()
 
+def validate_input(data):
+    errors = []
+
+    if not data:
+        return None, "Request body is required"
+
+    if "input" not in data:
+        errors.append("Field 'input' is required")
+    elif not isinstance(data["input"], str):
+        errors.append("Field 'input' must be a string")
+    elif len(data["input"].strip()) == 0:
+        errors.append("Field 'input' cannot be empty")
+    elif len(data["input"].strip()) < 10:
+        errors.append("Field 'input' must be at least 10 characters")
+    elif len(data["input"].strip()) > 1000:
+        errors.append("Field 'input' must not exceed 1000 characters")
+
+    if errors:
+        return None, errors[0]
+
+    return data["input"].strip(), None
+
 @describe_bp.route("/describe", methods=["POST"])
 def describe():
-    data = request.get_json()
+    # Step 1 — Validate input
+    data = request.get_json(silent=True)
+    input_text, error = validate_input(data)
 
-    # Input validation
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
-    if "input" not in data or not data["input"].strip():
-        return jsonify({"error": "Field 'input' is required and cannot be empty"}), 400
+    if error:
+        logger.warning(f"/describe validation failed: {error}")
+        return jsonify({
+            "error": error,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }), 400
 
-    input_text = data["input"].strip()
+    # Step 2 — Load prompt template
+    try:
+        prompt = load_prompt("prompts/describe_prompt.txt", input_text)
+    except FileNotFoundError:
+        logger.error("describe_prompt.txt not found")
+        return jsonify({"error": "Prompt template not found"}), 500
 
-    # Load prompt template
-    prompt = load_prompt("prompts/describe_prompt.txt", input_text)
-
-    # Call Groq
+    # Step 3 — Call Groq
+    logger.info(f"/describe called with input length: {len(input_text)}")
     result = groq_client.call(prompt, temperature=0.3)
 
     if result is None:
-        return jsonify({"error": "AI service unavailable. Please try again later."}), 503
+        logger.error("/describe Groq call failed after retries")
+        return jsonify({
+            "error": "AI service unavailable. Please try again later.",
+            "is_fallback": True,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }), 503
 
-    # Clean and parse JSON response
+    # Step 4 — Parse and return
     try:
         cleaned = clean_and_parse(result)
         parsed = json.loads(cleaned)
+
+        # Ensure generated_at is always present
+        if "generated_at" not in parsed:
+            parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
+
+        logger.info("/describe completed successfully")
         return jsonify(parsed), 200
-    except json.JSONDecodeError:
+
+    except json.JSONDecodeError as e:
+        logger.error(f"/describe JSON parse error: {str(e)}")
         return jsonify({
             "raw_response": result,
             "generated_at": datetime.now(timezone.utc).isoformat()
