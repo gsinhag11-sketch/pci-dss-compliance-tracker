@@ -1,46 +1,28 @@
 class ChromaService:
     def __init__(self):
+        print("Initializing simple in-memory DB...")
+
+        # Store as dictionary (IMPORTANT)
         self.data = {}
 
-        # ✅ ADD DATA HERE
+        # ✅ Add default PCI data
         self.add_data("PCI DSS Requirement 3 protects stored cardholder data using encryption", "req3")
         self.add_data("PCI DSS Requirement 1 is about firewalls and network security", "req1")
         self.add_data("Sensitive authentication data includes CVV, PIN, and full track data", "sad1")
         self.add_data("PCI DSS compliance steps include securing network, encrypting data, and monitoring access", "steps1")
         self.add_data("Cardholder data should be stored securely using encryption and access control", "storage1")
 
+        print("DB ready!")
+
     def add_data(self, text, doc_id):
+        print(f"Adding: {doc_id}")
         self.data[doc_id] = text.lower()
+        print(f"Added: {doc_id}")
 
     def query(self, question):
         question = question.lower()
 
-    # ✅ Direct intent mapping (VERY IMPORTANT)
-        if "requirement 1" in question:
-            return [self.data["req1"]]
-
-        if "requirement 3" in question:
-            return [self.data["req3"]]
- 
-        if "firewall" in question:
-            return [self.data["req1"]]
-
-        if "authentication" in question or "cvv" in question or "pin" in question:
-            return [self.data["sad1"]]
-
-        if "steps" in question or "compliance" in question:
-            return [self.data["steps1"]]
-
-        if "store" in question or "storage" in question:
-            return [self.data["storage1"]]
-
-        if "secure payment" in question or "prevent breach" in question:
-            return [self.data["steps1"]]
-
-        if "encryption" in question:
-            return [self.data["req3"]]
-
-    # ✅ fallback scoring (if nothing matches)
+        # Remove useless words
         stopwords = {
             "what", "is", "the", "in", "of", "how", "to",
             "are", "why", "a", "an", "dss", "pci"
@@ -52,8 +34,34 @@ class ChromaService:
         best_doc = None
 
         for doc_id, text in self.data.items():
-            score = sum(1 for word in question_words if word in text)
+            score = 0
 
+            # ✅ keyword match
+            score += sum(1 for word in question_words if word in text)
+
+            # ✅ exact phrase boost
+            if question in text:
+                score += 5
+
+            # ✅ requirement boost
+            if "requirement 1" in question and "requirement 1" in text:
+                score += 5
+            if "requirement 3" in question and "requirement 3" in text:
+                score += 5
+
+            # ✅ topic boosts
+            if "firewall" in question and "firewall" in text:
+                score += 3
+            if "encryption" in question and "encryption" in text:
+                score += 3
+            if "authentication" in question and "authentication" in text:
+                score += 3
+            if "store" in question and "store" in text:
+                score += 2
+            if "compliance" in question and "compliance" in text:
+                score += 2
+
+            # pick best
             if score > best_score:
                 best_score = score
                 best_doc = text
