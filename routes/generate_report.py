@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify
 from services.shared import groq_client
 from datetime import datetime, timezone
 
-query_bp = Blueprint("query", __name__)
+generate_report_bp = Blueprint("generate_report", __name__)
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "llama-3.3-70b-versatile"
@@ -31,42 +31,40 @@ def clean_response(text):
     return text.strip()
 
 
-@query_bp.route("/query", methods=["POST"])
-def query():
+@generate_report_bp.route("/generate-report", methods=["POST"])
+def generate_report():
     data = request.get_json(silent=True)
 
-    if not data or "question" not in data:
+    if not data:
         return jsonify({
             "data": {
-                "error": "Field 'question' is required",
+                "error": "Request body is required",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             },
             "meta": build_error_meta()
         }), 400
 
-    question = data["question"].strip()
-    context = data.get("context", "")
+    input_text = json.dumps(data, indent=2)
 
     prompt = f"""
 You are a PCI-DSS compliance expert.
 
-Answer the user question using the provided context.
+Generate a professional compliance report based on this data:
 
-Question:
-{question}
-
-Context:
-{context}
+{input_text}
 
 Return JSON only:
 {{
-  "answer": "Clear answer",
-  "sources": ["source 1", "source 2"],
+  "title": "PCI-DSS Compliance Report",
+  "executive_summary": "Summary",
+  "overview": "Overview",
+  "top_items": ["item 1", "item 2", "item 3"],
+  "recommendations": ["recommendation 1", "recommendation 2", "recommendation 3"],
   "generated_at": "{datetime.now(timezone.utc).isoformat()}"
 }}
 """
 
-    result = groq_client.call(prompt, temperature=0.3)
+    result = groq_client.call(prompt, temperature=0.3, max_tokens=1500)
 
     try:
         parsed = json.loads(clean_response(result["data"]))
@@ -77,8 +75,7 @@ Return JSON only:
     except Exception:
         return jsonify({
             "data": {
-                "answer": result.get("data", ""),
-                "sources": [],
+                "raw_response": result.get("data", ""),
                 "generated_at": datetime.now(timezone.utc).isoformat()
             },
             "meta": result.get("meta", build_error_meta())

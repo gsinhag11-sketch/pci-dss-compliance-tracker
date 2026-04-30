@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify
 from services.shared import groq_client
 from datetime import datetime, timezone
 
-query_bp = Blueprint("query", __name__)
+analyse_document_bp = Blueprint("analyse_document", __name__)
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "llama-3.3-70b-versatile"
@@ -31,42 +31,53 @@ def clean_response(text):
     return text.strip()
 
 
-@query_bp.route("/query", methods=["POST"])
-def query():
+@analyse_document_bp.route("/analyse-document", methods=["POST"])
+def analyse_document():
     data = request.get_json(silent=True)
 
-    if not data or "question" not in data:
+    if not data or "text" not in data:
         return jsonify({
             "data": {
-                "error": "Field 'question' is required",
+                "error": "Field 'text' is required",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             },
             "meta": build_error_meta()
         }), 400
 
-    question = data["question"].strip()
-    context = data.get("context", "")
+    text = data["text"].strip()
+
+    if len(text) < 20:
+        return jsonify({
+            "data": {
+                "error": "Field 'text' must be at least 20 characters",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            },
+            "meta": build_error_meta()
+        }), 400
 
     prompt = f"""
 You are a PCI-DSS compliance expert.
 
-Answer the user question using the provided context.
+Analyse the following document text. Identify key insights and risks.
 
-Question:
-{question}
-
-Context:
-{context}
+Document:
+{text}
 
 Return JSON only:
 {{
-  "answer": "Clear answer",
-  "sources": ["source 1", "source 2"],
+  "findings": [
+    {{
+      "insight": "Key insight",
+      "risk": "Compliance risk",
+      "severity": "High/Medium/Low",
+      "recommendation": "Recommended fix"
+    }}
+  ],
   "generated_at": "{datetime.now(timezone.utc).isoformat()}"
 }}
 """
 
-    result = groq_client.call(prompt, temperature=0.3)
+    result = groq_client.call(prompt, temperature=0.3, max_tokens=1500)
 
     try:
         parsed = json.loads(clean_response(result["data"]))
@@ -77,8 +88,7 @@ Return JSON only:
     except Exception:
         return jsonify({
             "data": {
-                "answer": result.get("data", ""),
-                "sources": [],
+                "raw_response": result.get("data", ""),
                 "generated_at": datetime.now(timezone.utc).isoformat()
             },
             "meta": result.get("meta", build_error_meta())
