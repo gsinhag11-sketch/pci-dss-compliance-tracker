@@ -4,7 +4,7 @@ from flask import Blueprint, request, jsonify
 from services.shared import groq_client
 from datetime import datetime, timezone
 
-describe_bp = Blueprint("describe", __name__)
+generate_report_bp = Blueprint("generate_report", __name__)
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "llama-3.3-70b-versatile"
@@ -20,20 +20,6 @@ def build_error_meta():
     }
 
 
-def validate_input(data):
-    if not data:
-        return None, "Request body is required"
-    if "input" not in data:
-        return None, "Field 'input' is required"
-    if not isinstance(data["input"], str):
-        return None, "Field 'input' must be a string"
-    if len(data["input"].strip()) < 10:
-        return None, "Field 'input' must be at least 10 characters"
-    if len(data["input"].strip()) > 1000:
-        return None, "Field 'input' must not exceed 1000 characters"
-    return data["input"].strip(), None
-
-
 def clean_response(text):
     text = text.strip()
     if text.startswith("```json"):
@@ -45,37 +31,40 @@ def clean_response(text):
     return text.strip()
 
 
-@describe_bp.route("/describe", methods=["POST"])
-def describe():
+@generate_report_bp.route("/generate-report", methods=["POST"])
+def generate_report():
     data = request.get_json(silent=True)
-    input_text, error = validate_input(data)
 
-    if error:
+    if not data:
         return jsonify({
             "data": {
-                "error": error,
+                "error": "Request body is required",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             },
             "meta": build_error_meta()
         }), 400
 
+    input_text = json.dumps(data, indent=2)
+
     prompt = f"""
 You are a PCI-DSS compliance expert.
 
-Describe the following compliance item in clear professional language.
+Generate a professional compliance report based on this data:
 
-Input:
 {input_text}
 
 Return JSON only:
 {{
-  "description": "Clear explanation of the compliance item",
-  "importance": "Why this matters for PCI-DSS compliance",
+  "title": "PCI-DSS Compliance Report",
+  "executive_summary": "Summary",
+  "overview": "Overview",
+  "top_items": ["item 1", "item 2", "item 3"],
+  "recommendations": ["recommendation 1", "recommendation 2", "recommendation 3"],
   "generated_at": "{datetime.now(timezone.utc).isoformat()}"
 }}
 """
 
-    result = groq_client.call(prompt, temperature=0.3)
+    result = groq_client.call(prompt, temperature=0.3, max_tokens=1500)
 
     try:
         parsed = json.loads(clean_response(result["data"]))
@@ -86,7 +75,7 @@ Return JSON only:
     except Exception:
         return jsonify({
             "data": {
-                "description": result.get("data", ""),
+                "raw_response": result.get("data", ""),
                 "generated_at": datetime.now(timezone.utc).isoformat()
             },
             "meta": result.get("meta", build_error_meta())
