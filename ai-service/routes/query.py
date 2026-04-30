@@ -17,40 +17,33 @@ import time
 
 query_bp = Blueprint("query", __name__)
 
+
 @query_bp.route("/query", methods=["POST"])
 def query():
-    start = time.time()   # ⏱ start timer
+    start = time.time()
 
     data = request.get_json()
     question = data.get("question")
+    fresh = data.get("fresh", False)
 
     if not question:
         return jsonify({"error": "Question is required"}), 400
 
-    # 🔍 Retrieve documents
-    docs = chroma.query(question)
+    # ✅ Get services from app config
+    chroma = current_app.config["CHROMA"]
+    cache = current_app.config["CACHE"]
 
-    # ✅ Handle empty DB case
-    if not docs:
-        return jsonify({
-            "answer": "No relevant data found",
-            "sources": []
-        })
+    # 🔥 Cache key
+    cache_key = question.lower()
 
-    # 🧠 Build context
-    context = "\n".join(docs)
+    # ✅ Use cache (only if not fresh)
+    if not fresh:
+        cached = cache.get(cache_key)
+        if cached:
+            cache.hit()
+            return jsonify({"answer": cached})
 
-    # 🤖 Generate answer
-    answer = groq.generate(question, context)
-
-    return jsonify({
-        "answer": answer,
-        "sources": docs
-    })
-    question = data.get("question", "")
-
-    chroma = current_app.config.get("CHROMA")
-
+    # 🔍 Query DB
     docs = chroma.query(question)
 
     if not docs:
@@ -58,16 +51,12 @@ def query():
     else:
         answer = docs[0]
 
-    end = time.time()   # ⏱ end timer
-    duration = end - start
+    # ✅ Save to cache
+    cache.set(cache_key, answer)
+    cache.miss()
 
-    # ✅ Store response times
-    times = current_app.config.get("RESPONSE_TIMES")
-    times.append(duration)
-
-    # Keep only last 10
-    if len(times) > 10:
-        times.pop(0)
+    # ⏱ Track response time
+    duration = time.time() - start
+    current_app.config["RESPONSE_TIMES"].append(duration)
 
     return jsonify({"answer": answer})
-
