@@ -1,31 +1,33 @@
-from flask import Blueprint, request, jsonify
-from services.chroma_service import ChromaService
+from flask import Blueprint, request, jsonify, current_app
+import time
 
-# ✅ DEFINE blueprint correctly
 query_bp = Blueprint("query", __name__)
-
-# Initialize service
-chroma = ChromaService()
 
 @query_bp.route("/query", methods=["POST"])
 def query():
+    start = time.time()   # ⏱ start timer
+
     data = request.get_json()
+    question = data.get("question", "")
 
-    if not data or "question" not in data:
-        return jsonify({"answer": "Invalid request"}), 400
+    chroma = current_app.config.get("CHROMA")
 
-    question = data["question"]
+    docs = chroma.query(question)
 
-    try:
-        docs = chroma.query(question)
+    if not docs:
+        answer = "No relevant data found"
+    else:
+        answer = docs[0]
 
-        if not docs:
-            return jsonify({"answer": "No relevant data found"})
+    end = time.time()   # ⏱ end timer
+    duration = end - start
 
-        return jsonify({"answer": docs[0]})
+    # ✅ Store response times
+    times = current_app.config.get("RESPONSE_TIMES")
+    times.append(duration)
 
-    except Exception as e:
-        return jsonify({
-            "answer": "Error occurred",
-            "error": str(e)
-        }), 500
+    # Keep only last 10
+    if len(times) > 10:
+        times.pop(0)
+
+    return jsonify({"answer": answer})
